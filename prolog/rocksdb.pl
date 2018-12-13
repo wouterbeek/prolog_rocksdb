@@ -1,176 +1,378 @@
+:- encoding(utf8).
 :- module(
   rocksdb,
   [
-    call_rocks/2,      % +Alias, :Goal_1
-    call_rocks/3,      % +Alias, :Goal_1, +Options
-    rocks/3,           % +Db, ?Key, ?Value
-    rocks_alias/2,     % ?Alias, -Directory
-   %rocks_batch/2,     % +Db, +Actions
-    rocks_clear/1,     % +Alias
-   %rocks_close/1,     % +Db
-   %rocks_delete/2,    % +Db, +Key
-   %rocks_delete/3,    % +Db, +Key, -Value
-    rocks_directory/1, % -Directory
-   %rocks_enum/3,      % +Db, ?Key, ?Value
-   %rocks_get/3,       % +Db, +Key, -Value
-    rocks_key/2,       % +DB, ?Key
-    rocks_init/2,      % +Alias, +Options
-    rocks_init/3,      % +Alias, -Db, +Options
-   %rocks_merge/3,     % +Db, +Key, +Value
-   %rocks_open/3,      % +Directory, +Db, +Options
-   %rocks_property/2,  % +Db, ?Property
-   %rocks_put/3,       % +Db, +Key, +Value
-    rocks_size/2,      % +Db, -Size
-    rocks_value/2      % +Db, -Value
+    call_rocksdb/2,      % +AliasOrDirectory, :Goal_1
+    call_rocksdb/3,      % +AliasOrDirectory, :Goal_1, +Options
+    rocksdb_batch/2,     % +AliasOrDb, +Actions
+    rocksdb_clear/1,     % +AliasOrDirectory
+    rocksdb_close/1,     % +AliasOrDb
+    rocksdb_delete/2,    % +AliasOrDb, +Key
+    rocksdb_key/2,       % +AliasOrDb, ?Key
+    rocksdb_key_value/3, % +AliasOrDb, ?Key, ?Value
+    rocksdb_merge/3,     % +AliasOrDb, +Key, +Value
+    rocksdb_merge_set/5, % +Mode, +Key, +Arg1, +Arg2, -Value
+    rocksdb_open/2,      % +Directory, +AliasOrDb
+    rocksdb_open/3,      % +Directory, +AliasOrDb, +Options
+    rocksdb_property/2,  % +AliasOrDb, ?Property
+    rocksdb_put/3,       % +AliasOrDb, +Key, +Value
+    rocksdb_size/2,      % +AliasOrDb, -Size
+    rocksdb_value/2      % +AliasOrDb, -Value
   ]
 ).
-:- reexport(library(rocksdb_cp)).
 
 /** <module> RocksDB interface
 
-@author Wouter Beek
+RocksDB is an embeddable persistent key-value store for fast storage.
+The store can be used only from one process at the same time.  It may
+be used from multiple Prolog threads though.  This library provides a
+SWI-Prolog binding for RocksDB.  RocksDB just associates byte arrays.
+This interface defines several mappings between Prolog datastructures
+and byte arrays that may be configured to store both keys and values.
+See rocksdb_open/3 for details.
+
+This module defines the following debug flag: `rocksdb'.
+
+---
+
+@author Jan Wielemaker and Wouter Beek
+@see http://rocksdb.org/
 @version 2017-2018
 */
 
 :- use_module(library(aggregate)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
+:- use_module(library(error)).
 :- use_module(library(option)).
-:- use_module(library(rlimit)).
-:- use_module(library(settings)).
+:- use_module(library(ordsets)).
 
-:- use_module(library(conf_ext)).
+:- use_module(library(file_ext)).
 :- use_module(library(dict)).
 :- use_module(library(file_ext)).
 
+:- dynamic
+    rocksdb_alias_directory_/2.
+
+:- use_foreign_library(foreign(rocksdb)).
+
 :- meta_predicate
-    call_rocks(+, 1),
-    call_rocks(+, 1, +).
-
-:- initialization
-   init_rocks.
-
-:- setting(rocks:directory, atom, .,
-           "The directory where RocksDB instances are stored.").
+    call_rocksdb(+, 1),
+    call_rocksdb(+, 1, +),
+    rocksdb_open(+, -, :).
 
 
 
 
 
-%! call_rocks(+Alias:atom, :Goal_1) is det.
-%! call_rocks(+Alias:atom, :Goal_1, +Options:list(compound)) is det.
+%! call_rocksdb(+AliasOrDirectory:atom, :Goal_1) is det.
+%! call_rocksdb(+AliasOrDirectory:atom, :Goal_1, +Options:list(compound)) is det.
 %
-% Calls Goal_1 on the RocksDB index called Alias.
+% Calls Goal_1 on the RocksDB index called AliasOrDirectory.
 %
-% Options are passed to rocks_init/3.
+% Options are passed to rocksdb_open/3.
 
-call_rocks(Alias, Goal_1) :-
-  call_rocks(Alias, Goal_1, []).
+call_rocksdb(AliasOrDirectory, Goal_1) :-
+  call_rocksdb(AliasOrDirectory, Goal_1, []).
 
 
-call_rocks(Alias, Goal_1, Options) :-
+call_rocksdb(AliasOrDirectory, Goal_1, Options) :-
   setup_call_cleanup(
-    rocks_init(Alias, Db, Options),
+    rocksdb_open(AliasOrDirectory, Db, Options),
     call(Goal_1, Db),
-    rocks_close(Db)
+    rocksdb_close(Db)
   ).
 
 
 
-%! rocks(+Db, +Key:term, +Value:term) is semidet.
-%! rocks(+Db, +Key:term, -Value:term) is semidet.
-%! rocks(+Db, -Key:term, +Value:term) is nondet.
-%! rocks(+Db, -Key:term, -Value:term) is nondet.
+%! rocksdb_batch(+AliasOrDb:or([atom,blob]), +Actions:list(compound)) is det.
 %
-% Generalization of rocks_enum/3 and rocks_get/3.
-
-rocks(Db, Key, Value) :-
-  ground(Key), !,
-  rocks_get(Db, Key, Value).
-rocks(Db, Key, Value) :-
-  rocks_enum(Db, Key, Value).
-
-
-
-%! rocks_alias(+Alias:atom, -Db:blob) is det.
-%! rocks_alias(-Alias:atom, -Db:blob) is nondet.
+%	Perform a batch of operations on RocksDB as an atomic operation.
+%	Actions is a list of compound terms of the following forms:
 %
-% Enumerates the exisiting RocksDB indices.
+%	  - delete(+Key:term)
+%
+%     See rocksdb_delete/2.
+%
+%	  - put(+Key:term,+Value:term)
+%
+%     See rocksdb_put/3.
+%
+%	Example usage:
+%
+% ```prolog
+%	rocksdb_get(Db, some_key, Value),
+%	rocksdb_batch(Db, [delete(some_key),put(other_key, Value)]),
+%	```
 
-rocks_alias(Alias, Dir) :-
-  rocks_directory(Dir0),
-  directory_subdirectory(Dir0, Alias, Dir).
 
 
-
-%! rocks_clear(+Alias:atom) is det.
+%! rocksdb_clear(+AliasOrDirectory:atom) is det.
 %
 % Assumes that the RocksDB index is already closed.
 
-rocks_clear(Alias) :-
-  rocks_directory(Dir0),
-  directory_file_path(Dir0, Alias, Dir),
-  (exists_directory(Dir) -> delete_directory_and_contents(Dir) ; true).
+rocksdb_clear(Alias) :-
+  rocksdb_alias_directory_(Alias, Dir), !,
+  delete_directory_and_contents(Dir),
+  retractall(rocksdb_alias_directory_(Alias,_)).
+rocksdb_clear(Dir) :-
+  exists_directory(Dir), !,
+  delete_directory_and_contents(Dir),
+  retractall(rockdb_alias_directory_(_, Dir)).
+rocksdb_clear(_).
 
 
 
-%! rocks_directory(-Directory:atom) is det.
-
-rocks_directory(Dir) :-
-  setting(rocks:directory, Dir0),
-  % Allow rocks_directory to be a relative directory.
-  absolute_file_name(Dir0, Dir, [access(write),file_type(directory)]).
-
-
-
-%! rocks_key(+Db, +Key:term) is semidet.
-%! rocks_key(+Db, -Key:term) is nondet.
-
-rocks_key(Db, Key) :-
-  rocks(Db, Key, _).
-
-
-
-%! rocks_init(+Alias:atom, +Options:list(compound)) is det.
-%! rocks_init(+Alias:atom, -Db, +Options:list(compound)) is det.
+%! rocksdb_close(+AliasOrDb:or([atom,blob])) is det.
 %
-% Initializes a RocksDB database object.  This includes creating the
-% directory structure, in case it is not already there.
+%	Destroy the RocksDB handle.  Note that anonymous handles are subject
+%	to (atom) garbage collection.
+
+
+
+%! rocksdb_delete(+AliasOrDb:or([atom,blob]), +Key:term) is semidet.
 %
-% Options are passed to rocks_open/3.
-
-rocks_init(Alias, Options1) :-
-  merge_options([alias(Alias)], Options1, Options2),
-  rocks_init(Alias, _, Options2).
+%	Delete Key from RocksDB.  Fails if Key is not in the database.
 
 
-rocks_init(Alias, Db, Options1) :-
-  rocks_directory(Dir0),
-  directory_file_path(Dir0, Alias, Dir),
+
+%! rocksdb_key(+AliasOrDb:or([atom,blob]), +Key:term) is semidet.
+%! rocksdb_key(+AliasOrDb:or([atom,blob]), -Key:term) is nondet.
+
+rocksdb_key(AliasOrDb, Key) :-
+  rocksdb_key_value(AliasOrDb, Key, _).
+
+
+
+%! rocksdb_key_value(+AliasOrDb:or([atom,blob]), +Key:term, +Value:term) is semidet.
+%! rocksdb_key_value(+AliasOrDb:or([atom,blob]), +Key:term, -Value:term) is semidet.
+%! rocksdb_key_value(+AliasOrDb:or([atom,blob]), -Key:term, +Value:term) is nondet.
+%! rocksdb_key_value(+AliasOrDb:or([atom,blob]), -Key:term, -Value:term) is nondet.
+%
+% Generalization of rocksdb_enum/3 and rocksdb_get/3.
+
+rocksdb_key_value(AliasOrDb, Key, Value) :-
+  ground(Key), !,
+  rocksdb_get(AliasOrDb, Key, Value).
+rocksdb_key_value(AliasOrDb, Key, Value) :-
+  rocksdb_enum(AliasOrDb, Key, Value).
+
+
+
+%! rocksdb_merge(+AliasOrDb:or([atom,blob]), +Key:term, +Value:term) is det.
+%
+%	Merge Value with the already existing value for Key.  Requires the
+%	option merge(:Merger) to be used when opening the database.  Using
+%	rocksdb_merge/3 rather than rocksdb_get/2, update and rocksdb_put/3
+%	makes the operation _atomic_ and reduces disk accesses.
+%
+%	`Merger' is called as follows:
+%
+% ```prolog
+%	call(:Merger, +How, +Key, +Value0, +MergeValue, -Value)
+% ```
+%
+% Two clauses are required, one for each possible value of `How':
+%
+%   - `full'
+%
+%     `MergeValue' is a list of values that need to be merged.
+%
+%   - `partial'
+%
+%     `MergeValue' is a single value.
+%
+%	If Key is not in RocksDB, `Value0` is unified with a value that
+%	depends on the value type.  If the value type is an atom, it is
+%	unified with the empty atom; if it is `string` or `binary` it is
+%	unified with an empty string; if it is `int32` or `int64` it is
+%	unified with the integer 0; and finally if the type is `term` it is
+%	unified with the empty list.
+%
+%	For example, if the value is a set of Prolog values we open the
+%	database with value(term) to allow for Prolog lists as value and we
+%	define merge_set/5 as below.
+%
+%	```
+%	merge(partial, _Key, Left, Right, Value) :-
+%	  ord_union(Left, Right, Value).
+%	merge(full, _Key, Initial, Additions, Value) :-
+%	  append([Initial|Additions], List),
+%	  sort(List, Value).
+%	```
+%
+%	If the merge callback fails or raises an exception the merge
+%	operation fails and the error is logged through the RocksDB logging
+%	facilities.  Note that the merge callback can be called in a
+%	different thread or even in a temporary created thread if RocksDB
+%	decides to merge remaining values in the background.
+%
+%	@error permission_error(merge, rocksdb RocksDB) if the database was
+%	not opened with the merge(Merger) option.
+%
+%	@see https://github.com/facebook/rocksdb/wiki/Merge-Operator for
+%	understanding the concept of value merging in RocksDB.
+
+
+
+%! rocksdb_open(+Directory:atom, -AliasOrDb:or([atom,blob]), +Options:list(compound)) is det.
+%
+%	Open a RocksDB database in Directory and unify RocksDB with a handle
+%	to the opened database.  Defined options are:
+%
+%	  - alias(+Name)
+%
+%	    Give the database a name instead of using an anonymous handle.
+%	    A named database is not subject to GC and must be closed
+%	    explicitly.
+%
+%	  - open(+How)
+%
+%	    If How is `once' and an alias is given, a second open simply
+%	    returns a handle to the already open database.
+%
+%	  - key(+Type)
+%
+%	  - value(+Type)
+%
+%	    Define the type for the key and value. This must be consistent
+%	    over multiple invocations.  Defined types are:
+%
+%	    - atom
+%
+%	      Accepts an atom or string.  Unifies the result with an atom.
+%	      Data is stored as a UTF-8 string in RocksDB.
+%
+%	    - string
+%
+%	      Accepts an atom or string.  Unifies the result with a string.
+%	      Data is stored as a UTF-8 string in RocksDB.
+%
+%	    - binary
+%
+%	      Accepts an atom or string with codes in the range 0…255.
+%	      Unifies the result with a string. Data is stored as a sequence
+%	      of bytes in RocksDB.
+%
+%	    - int32
+%
+%	      Maps to a Prolog integer in the range
+%	      -2,147,483,648…2,147,483,647, stored as a 4 bytes in native
+%	      byte order.
+%
+%	    - int64
+%
+%	      Maps to a Prolog integer in the range
+%	      -9,223,372,036,854,775,808…9,223,372,036,854,775,807, stored
+%	      as a 8 bytes in native byte order.
+%
+%	    - float
+%
+%	      Value is mapped to a 32-bit floating point number.
+%
+%	    - double
+%
+%	      Value is mapped to a 34-bit floating point number (double).
+%
+%	    - term
+%
+%	      Stores any Prolog term.  Stored using PL_record_external().
+%	      The PL_record_external() function serializes the internal
+%	      structure of a term, including _cycles_, _sharing_ and
+%	      _attributes_.  This means that if the key is a term, it only
+%	      matches if the the same cycles and sharing is used.  For
+%	      example, `X = f(a), Key = k(X,X)` is a different key from `Key
+%	      = k(f(a),f(a))` and `X = [a|X]` is a different key from `X =
+%	      [a,a|X]`.  Applications for which such keys should match must
+%	      first normalize the key.  Normalization can be based on
+%	      term_factorized/3 from library(terms).
+%
+%	  - merge(:Goal)
+%
+%	    Define RocksDB value merging.  See rocksdb_merge/3.
+%
+%	  - mode(+Mode)
+%
+%	    One of `read_write` (default) or `read_only`.  The latter uses
+%	    OpenForReadOnly() to open the database.
+%
+% If Directory does not yet exist it is created.
+%
+% If option alias/1 is not given, the last non-empty subpath of
+% Directory is used as the alias.
+
+rocksdb_open(Dir, Db) :-
+  rocksdb_open(Dir, Db, []).
+
+
+rocksdb_open(Dir, Db, Options0) :-
+	meta_options(is_meta, Options0, Options1),
   create_directory(Dir),
-  merge_options([alias(Alias)], Options1, Options2),
-  rocks_open(Dir, Db, Options2).
+  set_alias_option_(Dir, Options1, Alias, Options2),
+  store_alias_directory_(Alias, Dir),
+  rocksdb_open_(Dir, Db, Options2).
+
+store_alias_directory_(Alias, Dir) :-
+  rocksdb_alias_directory_(Alias, Dir), !.
+store_alias_directory_(Alias, _) :-
+  rocksdb_alias_directory_(Alias, _), !,
+  existence_error(rocksdb_alias, Alias).
+store_alias_directory_(Alias, Dir) :-
+  assertz(rocksdb_alias_directory_(Alias,Dir)).
+
+set_alias_option_(_, Options, Alias, Options) :-
+  option(alias(Alias), Options), !.
+set_alias_option_(Dir, Options1, Alias, Options2) :-
+  directory_subdirectories(Dir, L),
+  reverse(L, Rev),
+  member(Alias, Rev),
+  Alias \== '',
+  \+ is_dummy_file(Alias), !,
+  merge_options([alias(Alias)], Options1, Options2).
+
+is_meta(merge).
 
 
 
-%! rocks_size(+Db, -Size:nonneg) is det.
+%! rocksdb_property(+AliasOrDb, +Property:compound) is semidet.
+%! rocksdb_property(+AliasOrDb, -Property:compound) is multi.
+
+rocksdb_property(AliasOrDb, Property) :-
+  var(Property), !,
+  rocksdb_property_(Key),
+  rocksdb_property(AliasOrDb, Key, Value),
+  compound_name_arguments(Property, Key, [Value]).
+rocksdb_property(AliasOrDb, Property) :-
+  compound_name_arguments(Property, Key, [Value]), !,
+  rocksdb_property(AliasOrDb, Key, Value).
+rocksdb_property(_AliasOrDb, Property) :-
+  type_error(property, Property).
+
+rocksdb_property_(estimate_num_keys).
+
+
+
+%! rocksdb_put(+AliasOrDb:or([atom,blob]), +Key:term, +Value:term) is det.
+%
+%	Add Key-Value to the RocksDB  database.   If  Key  already has a
+%	value, the existing value is silently replaced by Value.
+
+
+
+%! rocksdb_size(+AliasOrDb:or([atom,blob]), -Size:nonneg) is det.
 %
 % The Size of a RocksDB index is the number of unique pairs that are
 % stored in it.
 
-rocks_size(Db, Size) :-
-  aggregate_all(
-    count,
-    rocks_enum(Db, _, _),
-    Size
-  ).
+rocksdb_size(AliasOrDb, Size) :-
+  aggregate_all(count, rocksdb_enum(AliasOrDb, _, _), Size).
 
 
 
-%! rocks_value(+Db, -Value:term) is nondet.
+%! rocksdb_value(+AliasOrDb:or([atom,blob]), -Value:term) is nondet.
 
-rocks_value(Db, Value) :-
-  rocks(Db, _, Value).
+rocksdb_value(AliasOrDb, Value) :-
+  rocksdb_key_value(AliasOrDb, _, Value).
 
 
 
@@ -178,27 +380,15 @@ rocks_value(Db, Value) :-
 
 % MERGE OPERATORS %
 
-%! rocks_merge_set(+Mode, +Key, +Left, +Right, -Result) is det.
+%! rocksdb_merge_set(+Mode:oneof([full,partial]), +Key:term, +Arg1:list(term), +Arg2:or([list(term),term]), -Value:list(term)) is det.
 
-rocks_merge_set(partial, _, Xs, Ys, Zs) :-
-  ord_union(Xs, Ys, Zs),
-  (debugging(rocks) -> debug_merge_set_([Xs,Ys]) ; true).
-rocks_merge_set(full, _, Xs, Yss, Zs) :-
-  ord_union([Xs|Yss], Zs),
-  (debugging(rocks) -> debug_merge_set_([Xs|Yss]) ; true).
+rocksdb_merge_set(partial, _Key, L1, L2, Value) :-
+  ord_union(L1, L2, Value),
+  (debugging(rocksdb) -> debug_merge_set_([L1,L2]) ; true).
+rocksdb_merge_set(full, _Key, L, Ls, Value) :-
+  ord_union([L|Ls], Value),
+  (debugging(rocksdb) -> debug_merge_set_([L|Ls]) ; true).
 
 debug_merge_set_(Sets) :-
-  maplist(length, Sets, Lengths),
-  debug(rocks, "Set merge: ~p", [Lengths]).
-
-
-
-
-
-% INITIALIZATION %
-
-init_rocks :-
-  conf_json(rocks, Conf, Dir),
-  create_directory(Dir),
-  set_setting(rocks:directory, Dir),
-  (dict_get(files, Conf, NumFiles) -> rlimit(nofile, _, NumFiles) ; true).
+  maplist(length, Sets, Cardinalities),
+  debug(rocksdb, "Set merge: ~p", [Cardinalities]).

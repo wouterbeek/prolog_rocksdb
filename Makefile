@@ -1,21 +1,24 @@
-#COFLAGS=-gdwarf-2 -g3
-CPPFLAGS=-std=c++11 $(CFLAGS) $(LDSOFLAGS)
+# -*- Makefile -*-
+
+CXX=clang++
+CXXFLAGS=-std=c++11 $(CFLAGS) $(LDSOFLAGS) -Wall -Wextra
 PLPATHS=-p library=prolog -p foreign="$(PACKSODIR)"
 
-all:	$(PACKSODIR)/rocksdb4pl.$(SOEXT)
+.PHONY: all check clean distclean install
 
-$(PACKSODIR)/rocksdb4pl.$(SOEXT): cpp/rocksdb4pl.cpp
+all: $(PACKSODIR)/rocksdb.$(SOEXT)
+
+$(PACKSODIR)/rocksdb.$(SOEXT): cpp/rocksdb.cpp
 	mkdir -p $(PACKSODIR)
-	gcc $(CPPFLAGS) -shared -o $@ cpp/rocksdb4pl.cpp -lrocksdb $(SWISOLIB)
-
-install::
+	$(CXX) $(CXXFLAGS) -shared -o $@ cpp/rocksdb.cpp -lrocksdb $(SWISOLIB)
 
 check::
 	swipl $(PLPATHS) -g test_rocksdb,halt -t 'halt(1)' test/test_rocksdb.pl
 
-distclean: clean
-	rm -f $(PACKSODIR)/rocksdb4pl.$(SOEXT)
-
 clean:
-	rm -f *~
+	$(RM) *~
 
+distclean: clean
+	$(RM) $(PACKSODIR)/rocksdb.$(SOEXT) -r lib/
+
+install::

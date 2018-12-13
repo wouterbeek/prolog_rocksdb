@@ -32,200 +32,195 @@
     POSSIBILITY OF SUCH DAMAGE.
 */
 
-:- module(test_rocksdb,
-	  [ test_rocksdb/0
-	  ]).
-:- use_module(library(rocksdb)).
-:- use_module(library(plunit)).
+:- module(test_rocksdb, [test_rocksdb/0]).
+
 :- use_module(library(debug)).
+:- use_module(library(filesex)).
+:- use_module(library(plunit)).
+:- use_module(library(yall)).
+
+:- use_module(library(rocksdb)).
 
 test_rocksdb :-
-	run_tests([ rocks,
-		    terms,
-		    types,
-		    merge,
-                    properties
-		  ]).
+  run_tests([merge,properties,rocksdb,terms,types]).
 
-:- begin_tests(rocks, [cleanup(delete_db)]).
+:- begin_tests(rocksdb, [cleanup(delete_db)]).
 
+test(basic, Noot==noot) :-
+  test_db(Dir),
+  call_rocksdb(
+    Dir,
+    {Noot}/[Db]>>(
+      rocksdb_put(Db, aap, noot),
+      rocksdb_key_value(Db, aap, Noot),
+      rocksdb_delete(Db, aap),
+      assertion(\+ rocksdb_key(Db, aap))
+    )
+  ).
 test(basic, Noot == noot) :-
-	test_db(Dir),
-	rocks_open(Dir, RocksDB, []),
-	rocks_put(RocksDB, aap, noot),
-	rocks_get(RocksDB, aap, Noot),
-	rocks_delete(RocksDB, aap),
-	assertion(\+ rocks_get(RocksDB, aap, _)),
-	rocks_close(RocksDB).
-test(basic, Noot == noot) :-
-	test_db(Dir),
-	rocks_open(Dir, RocksDB, []),
-	rocks_put(RocksDB, aap, noot),
-	rocks_close(RocksDB),
-        rocks_open(Dir, RocksDB2, [mode(read_only)]),
-	rocks_get(RocksDB2, aap, Noot),
-	rocks_close(RocksDB2).
-test(open_twice, error(rocks_error(_))) :-
-	test_db(Dir),
-	setup_call_cleanup(
-	    rocks_open(Dir, RocksDB1, []),
-	    call_cleanup(rocks_open(Dir, RocksDB2, []),
-			 rocks_close(RocksDB2)),
-	    rocks_close(RocksDB1)).
-test(batch, Pairs == [zus-noot]) :-
-	test_db(Dir),
-	rocks_open(Dir, RocksDB, []),
-	rocks_put(RocksDB, aap, noot),
-	rocks_get(RocksDB, aap, Value),
-	rocks_batch(RocksDB,
-		    [ delete(aap),
-		      put(zus, Value)
-		    ]),
-	findall(K-V, rocks_enum(RocksDB, K, V), Pairs),
-	rocks_close(RocksDB).
+  test_db(Dir),
+  call_rocksdb(Dir, [Db]>>rocksdb_put(Db, aap, noot)),
+  call_rocksdb(
+    Dir,
+    {Noot}/[Db]>>rocksdb_key_value(Db, aap, Noot),
+    [mode(read_only)]
+  ).
+test(batch, Pairs==[zus-noot]) :-
+  test_db(Dir),
+  call_rocksdb(
+    Dir,
+    {Pairs}/[Db]>>(
+      rocksdb_put(Db, aap, noot),
+      rocksdb_key_value(Db, aap, Value),
+      rocksdb_batch(Db, [delete(aap),put(zus, Value)]),
+      findall(Key-Value, rocksdb_enum(Db, Key, Value), Pairs)
+    )
+  ).
 
-:- end_tests(rocks).
+:- end_tests(rocksdb).
 
 :- begin_tests(terms, [cleanup(delete_db)]).
 
-test(basic, Noot-Noot1 == noot(mies)-noot(1)) :-
-	test_db(Dir),
-	rocks_open(Dir, RocksDB,
-		   [ key(term),
-		     value(term)
-		   ]),
-	rocks_put(RocksDB, aap, noot(mies)),
-	rocks_get(RocksDB, aap, Noot),
-	rocks_put(RocksDB, aap(1), noot(1)),
-	rocks_get(RocksDB, aap(1), Noot1),
-	rocks_close(RocksDB).
+test(basic, Noot1-Noot2==noot(mies)-noot(1)) :-
+  test_db(Dir),
+  call_rocksdb(
+    Dir,
+    {Noot1,Noot2}/[Db]>>(
+      rocksdb_put(Db, aap, noot(mies)),
+      rocksdb_key_value(Db, aap, Noot1),
+      rocksdb_put(Db, aap(1), noot(1)),
+      rocksdb_key_value(Db, aap(1), Noot2)
+    ),
+    [key(term),value(term)]
+  ).
 
 :- end_tests(terms).
 
 :- begin_tests(types, [cleanup(delete_db)]).
 
 test(int32) :-
-	Min = -100, Max = 100,
-	test_db(Dir),
-	rocks_open(Dir, RocksDB,
-		   [ key(atom),
-		     value(int32)
-		   ]),
-	forall(between(Min, Max, I),
-	       ( rocks_put(RocksDB, key, I),
-		 assertion(rocks_get(RocksDB, key, I)))),
-	rocks_close(RocksDB).
+  test_db(Dir),
+  call_rocksdb(
+    Dir,
+    [Db]>>forall(
+            between(-100, 100, I),
+            (
+              rocksdb_put(Db, key, I),
+              assertion(rocksdb_key_value(Db, key, I))
+            )
+          ),
+    [key(atom),value(int32)]
+  ).
 
 test(int64) :-
-	Min = -100, Max = 100,
-	test_db(Dir),
-	rocks_open(Dir, RocksDB,
-		   [ key(atom),
-		     value(int64)
-		   ]),
-	forall(between(Min, Max, I),
-	       ( rocks_put(RocksDB, key, I),
-		 assertion(rocks_get(RocksDB, key, I)))),
-	rocks_close(RocksDB).
+  test_db(Dir),
+  call_rocksdb(
+    Dir,
+    [Db]>>forall(
+            between(-100, 100, I),
+            (
+              rocksdb_put(Db, key, I),
+              assertion(rocksdb_key_value(Db, key, I))
+            )
+          ),
+    [key(atom),value(int64)]
+  ).
 
 test(float) :-
-	Min = -100, Max = 100,
-	test_db(Dir),
-	rocks_open(Dir, RocksDB,
-		   [ key(atom),
-		     value(float)
-		   ]),
-	forall(between(Min, Max, I),
-	       ( F is sin(I),
-		 rocks_put(RocksDB, key, F),
-		 rocks_get(RocksDB, key, F2),
-		 assertion(abs(F-F2) < 0.00001))),
-	rocks_close(RocksDB).
+  test_db(Dir),
+  call_rocksdb(
+    Dir,
+    [Db]>>forall(
+            between(-100, 100, I),
+            (
+              F is sin(I),
+              rocksdb_put(Db, key, F),
+              rocksdb_key_value(Db, key, F2),
+              assertion(abs(F-F2) < 0.00001)
+            )
+          ),
+    [key(atom),value(float)]
+  ).
 
 test(double) :-
-	Min = -100, Max = 100,
-	test_db(Dir),
-	rocks_open(Dir, RocksDB,
-		   [ key(atom),
-		     value(double)
-		   ]),
-	forall(between(Min, Max, I),
-	       ( F is sin(I),
-		 rocks_put(RocksDB, key, F),
-		 rocks_get(RocksDB, key, F2),
-		 assertion(F=:=F2))),
-	rocks_close(RocksDB).
+  test_db(Dir),
+  call_rocksdb(
+    Dir,
+    [Db]>>forall(
+            between(-100, 100, I),
+            (
+              F1 is sin(I),
+              rocksdb_put(Db, key, F1),
+              rocksdb_key_value(Db, key, F2),
+              assertion(F1 =:= F2)
+            )
+          ),
+    [key(atom),value(double)]
+  ).
 
 :- end_tests(types).
 
 :- begin_tests(merge, [cleanup(delete_db)]).
 
-test(set, FinalOk == Final) :-
-	N = 100,
-	numlist(1, N, FinalOk),
-	test_db(Dir),
-	rocks_open(Dir, DB,
-		   [ merge(merge),
-		     value(term)
-		   ]),
-	rocks_put(DB, set, []),
-	forall(between(1, N, I),
-	       (   rocks_merge(DB, set, [I]),
-		   (   I mod 10 =:= 0
-		   ->  rocks_get(DB, set, Set),
-		       assertion(numlist(1, I, Set))
-		   ;   true
-		   )
-	       )),
-	rocks_get(DB, set, Final),
-	rocks_close(DB).
-test(new, Final == [1]) :-
-	test_db(Dir),
-	rocks_open(Dir, DB,
-		   [ merge(merge),
-		     value(term)
-		   ]),
-	rocks_merge(DB, empty, [1]),
-	rocks_get(DB, empty, Final),
-	rocks_close(DB).
-
-merge(partial, _Key, Left, Right, Result) :-
-	debug(merge, 'Merge partial ~p ~p', [Left, Right]),
-	ord_union(Left, Right, Result).
-merge(full, _Key, Initial, Additions, Result) :-
-	debug(merge, 'Merge full ~p ~p', [Initial, Additions]),
-	append([Initial|Additions], List),
-	sort(List, Result).
+test(set, FinalOk==Final) :-
+  numlist(1, 100, FinalOk),
+  test_db(Dir),
+  call_rocksdb(
+    Dir,
+    {Final}/[Db]>>(
+      rocksdb_put(Db, set, []),
+      forall(
+        between(1, 100, I),
+        (
+          rocksdb_merge(Db, set, [I]),
+          (   I mod 10 =:= 0
+          ->  rocksdb_key_value(Db, set, Set),
+              assertion(numlist(1, I, Set))
+          ;   true
+          )
+        )
+      ),
+      rocksdb_key_value(Db, set, Final)
+    ),
+    [merge(rocksdb_merge_set),value(term)]
+  ).
+test(new, Final==[1]) :-
+  test_db(Dir),
+  call_rocksdb(
+    Dir,
+    {Final}/[Db]>>(
+      rocksdb_merge(Db, empty, [1]),
+      rocksdb_key_value(Db, empty, Final)
+    ),
+    [merge(rocksdb_merge_set),value(term)]
+  ).
 
 :- end_tests(merge).
 
 :- begin_tests(properties, [cleanup(delete_db)]).
 
 test(basic) :-
-	test_db(Dir),
-	rocks_open(Dir, RocksDB,
-		   [ key(term),
-		     value(term)
-		   ]),
-	rocks_put(RocksDB, aap, noot(mies)),
-	rocks_put(RocksDB, aap(1), noot(1)),
-	rocks_property(RocksDB, estimate_num_keys(Num)),
-        assertion(integer(Num)).
+  test_db(Dir),
+  call_rocksdb(
+    Dir,
+    [Db]>>(
+      rocksdb_put(Db, aap, noot(mies)),
+      rocksdb_put(Db, aap(1), noot(1)),
+      rocksdb_property(Db, estimate_num_keys(Num)),
+      assertion(integer(Num))
+    ),
+    [key(term),value(term)]
+  ).
 
 :- end_tests(properties).
-
-
-		 /*******************************
-		 *	       UTIL		*
-		 *******************************/
 
 test_db('/tmp/test_rocksdb').
 
 delete_db :-
-	test_db(DB),
-	delete_db(DB).
+  test_db(Dir),
+  delete_db(Dir).
 
-delete_db(DB) :-
-	exists_directory(DB), !,
-	delete_directory_and_contents(DB).
+delete_db(Dir) :-
+  exists_directory(Dir), !,
+  delete_directory_and_contents(Dir).
 delete_db(_).
