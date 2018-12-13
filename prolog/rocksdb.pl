@@ -58,7 +58,7 @@ This module defines the following debug flag: `rocksdb'.
 
 :- meta_predicate
     call_rocksdb(+, 1),
-    call_rocksdb(+, 1, +),
+    call_rocksdb(+, 1, :),
     rocksdb_open(+, -, :).
 
 
@@ -72,13 +72,14 @@ This module defines the following debug flag: `rocksdb'.
 %
 % Options are passed to rocksdb_open/3.
 
-call_rocksdb(AliasOrDirectory, Goal_1) :-
-  call_rocksdb(AliasOrDirectory, Goal_1, []).
+call_rocksdb(AliasOrDir, Goal_1) :-
+  call_rocksdb(AliasOrDir, Goal_1, []).
 
 
-call_rocksdb(AliasOrDirectory, Goal_1, Options) :-
+call_rocksdb(AliasOrDir, Goal_1, Options0) :-
+	meta_options(is_meta, Options0, Options),
   setup_call_cleanup(
-    rocksdb_open(AliasOrDirectory, Db, Options),
+    rocksdb_open(AliasOrDir, Db, Options),
     call(Goal_1, Db),
     rocksdb_close(Db)
   ).
