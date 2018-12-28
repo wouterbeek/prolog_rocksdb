@@ -1,6 +1,5 @@
 # -*- Makefile -*-
 
-CXX=clang++
 CXXFLAGS=-std=c++11 $(CFLAGS) $(LDSOFLAGS) -Wall -Wextra
 PLPATHS=-p library=prolog -p foreign="$(PACKSODIR)"
 
@@ -16,9 +15,7 @@ check::
 	swipl $(PLPATHS) -g test_rocksdb,halt -t 'halt(1)' test/test_rocksdb.pl
 
 clean:
-	$(RM) *~
-
-distclean: clean
+distclean:
 	$(RM) $(PACKSODIR)/rocksdb.$(SOEXT) -r lib/
 
 install::

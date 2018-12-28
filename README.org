@@ -34,6 +34,6 @@ that is based on a Prolog Pack by Jan Wielemaker: [[https://github.com/JanWielem
 
 * Usage
 
-#+BEGIN_SRC prolog
-?- [library(rocksdb)].
-#+END_SRC
+  #+BEGIN_SRC prolog
+  ?- [library(rocksdb)].
+  #+END_SRC
