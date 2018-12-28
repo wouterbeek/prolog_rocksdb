@@ -9,16 +9,20 @@ that is based on a Prolog Pack by Jan Wielemaker: [[https://github.com/JanWielem
 * Installation
 
   1. Install [[http://www.swi-prolog.org][SWI-Prolog]].
+
   2. Install [[https://github.com/wouterbeek.com/Prolog-Library-Collection][Prolog-Library-Collection]].
+
   3. Install RocksDB:
 
      - ~apt-get install librocksdb-dev~ on Debian-based distro's
        (e.g., Ubuntu).
+
      - ~dnf install rocksdb-devel~ on Red Hat-based distro's (e.g.,
        Fedora).
 
   3. Clone this repository: ~git clone
-     https://github.com/wouterbeek/prolog_rocksdb~
+     https://github.com/wouterbeek/prolog_rocksdb~.
+
   4. Compile the C++ sources:
 
      #+BEGIN_SRC sh
@@ -34,6 +38,6 @@ that is based on a Prolog Pack by Jan Wielemaker: [[https://github.com/JanWielem
 
 * Usage
 
-  #+BEGIN_SRC prolog
-  ?- [library(rocksdb)].
-  #+END_SRC
+#+BEGIN_SRC prolog
+?- [library(rocksdb)].
+#+END_SRC
