@@ -66,7 +66,7 @@ static unsigned atom_hash(atom_t a)
   return (unsigned)(a>>7) % alias_size;
 }
 
-static atom_t rocks_get_alias(atom_t name)
+static atom_t rocksdb_get_alias(atom_t name)
 {
   for (alias_cell* c = alias_entries[atom_hash(name)]; c; c = c->next) {
     if (c->name == name) {
@@ -76,11 +76,11 @@ static atom_t rocks_get_alias(atom_t name)
   return NULL_ATOM;
 }
 
-static void rocks_alias(atom_t name, atom_t symbol)
+static void rocksdb_alias(atom_t name, atom_t symbol)
 {
   unsigned key {atom_hash(name)};
   alias_lock.lock();
-  if (!rocks_get_alias(name)) {
+  if (!rocksdb_get_alias(name)) {
     alias_cell* c = (alias_cell*)malloc(sizeof(*c));
     c->name = name;
     c->symbol = symbol;
@@ -95,7 +95,7 @@ static void rocks_alias(atom_t name, atom_t symbol)
   }
 }
 
-static void rocks_unalias(atom_t name)
+static void rocksdb_unalias(atom_t name)
 {
   unsigned key {atom_hash(name)};
   alias_cell* c = nullptr;
@@ -120,7 +120,7 @@ static void rocks_unalias(atom_t name)
 
 
 /* SYMBOL REFERENCES */
-static int write_rocks_ref(void*, atom_t eref, int flags)
+static int write_rocksdb_ref(void*, atom_t eref, int flags)
 {
   dbref** refp = (dbref**)PL_blob_data(eref, nullptr, nullptr);
   dbref* ref = *refp;
@@ -129,9 +129,8 @@ static int write_rocks_ref(void*, atom_t eref, int flags)
   return TRUE;
 }
 
-/* GC an rocks from the atom garbage collector. */
-
-static int release_rocks_ref(atom_t aref)
+/* GC an RocksDB reference from the atom garbage collector. */
+static int release_rocksdb_ref(atom_t aref)
 {
   dbref** refp = (dbref**)PL_blob_data(aref, nullptr, nullptr);
   dbref* ref = *refp;
@@ -163,14 +162,14 @@ static atom_t load_rocks(void* fd)
   return PL_new_atom("<saved-rocksdb-ref>");
 }
 
-static PL_blob_t rocks_blob =
+static PL_blob_t rocksdb_blob =
 {
  PL_BLOB_MAGIC,
   PL_BLOB_UNIQUE,
   (char*)"rocksdb",
-  release_rocks_ref,
+  release_rocksdb_ref,
   nullptr,
-  write_rocks_ref,
+  write_rocksdb_ref,
   nullptr,
   save_rocks,
   load_rocks
@@ -181,9 +180,9 @@ static int unify_rocks(term_t t, dbref* ref)
   if (ref->name) {
     if (!ref->symbol) {
       PlTerm tmp;
-      if (PL_unify_blob(tmp, &ref, sizeof(ref), &rocks_blob) &&
+      if (PL_unify_blob(tmp, &ref, sizeof(ref), &rocksdb_blob) &&
           PL_get_atom(tmp, &ref->symbol)) {
-        rocks_alias(ref->name, ref->symbol);
+        rocksdb_alias(ref->name, ref->symbol);
       } else {
         assert(0);
       }
@@ -192,7 +191,7 @@ static int unify_rocks(term_t t, dbref* ref)
   } else if (ref->symbol) {
     return PL_unify_atom(t, ref->symbol);
   } else {
-    return (PL_unify_blob(t, &ref, sizeof(ref), &rocks_blob) &&
+    return (PL_unify_blob(t, &ref, sizeof(ref), &rocksdb_blob) &&
             PL_get_atom(t, &ref->symbol));
   }
 }
@@ -202,7 +201,7 @@ static dbref* symbol_dbref(atom_t symbol)
   void* data;
   size_t len;
   PL_blob_t* type;
-  if ((data = PL_blob_data(symbol, &len, &type)) && type == &rocks_blob) {
+  if ((data = PL_blob_data(symbol, &len, &type)) && type == &rocksdb_blob) {
     dbref** erd = (dbref**)data;
     return *erd;
   }
@@ -223,7 +222,7 @@ static int get_rocks(term_t t, dbref** erp, int warn =TRUE)
           throw PlExistenceError("rocksdb", t);
         }
       }
-      a = rocks_get_alias(a);
+      a = rocksdb_get_alias(a);
     }
     throw PlExistenceError("rocksdb", t);
   }
@@ -241,7 +240,7 @@ class RocksError : public PlException
 public:
   RocksError(const rocksdb::Status& status)
     : PlException(PlCompound("error",
-                             PlTermv(PlCompound("rocks_error",
+                             PlTermv(PlCompound("rocksdb_error",
                                                 PlTerm(status.ToString().c_str())),
                                      PlTerm())))
   {}
@@ -597,7 +596,7 @@ static void get_blob_type(PlTerm t, blob_type* key_type)
     } else if (ATOM_term == a) {
       *key_type = BLOB_TERM;
     } else {
-      throw PlDomainError("rocks_type", t);
+      throw PlDomainError("rocksdb_type", t);
     }
     return;
   }
@@ -665,7 +664,7 @@ PREDICATE(rocksdb_open_, 3)
   }
   if (alias && once) {
     atom_t existing;
-    if ((existing = rocks_get_alias(alias))) {
+    if ((existing = rocksdb_get_alias(alias))) {
       dbref* eref;
       if ((eref = symbol_dbref(existing)) && (eref->flags&DB_OPEN_ONCE)) {
         return PL_unify_atom(A2, existing);
@@ -707,7 +706,7 @@ PREDICATE(rocksdb_close, 1)
   ref->db = nullptr;
   ref->flags |= DB_DESTROYED;
   if (ref->name) {
-    rocks_unalias(ref->name);
+    rocksdb_unalias(ref->name);
     ref->name = NULL_ATOM;
   }
   delete db;
@@ -836,7 +835,7 @@ static void batch_operation(const dbref* ref,
       get_slice(e[2], value, ref->type.value);
       batch.Put(key, value);
     } else {
-      PlDomainError("rocks_batch_operation", e);
+      PlDomainError("rocksdb_batch_operation", e);
     }
   } else {
     PlTypeError("compound", e);
@@ -869,7 +868,7 @@ PREDICATE(rocksdb_property, 3)
       return (ref->db->GetIntProperty("rocksdb.estimate-num-keys", &value) &&
               PL_unify_int64(A3, value));
     } else {
-      throw PlDomainError("rocks_property", A2);
+      throw PlDomainError("rocksdb_property", A2);
     }
   }
   throw PlTypeError("atom", A2);

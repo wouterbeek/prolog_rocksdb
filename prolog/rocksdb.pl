@@ -37,7 +37,7 @@ This module defines the following debug flag: `rocksdb'.
 
 @author Jan Wielemaker and Wouter Beek
 @see http://rocksdb.org/
-@version 2017-2018
+@version 2017-2019
 */
 
 :- use_module(library(aggregate)).
@@ -77,7 +77,7 @@ call_rocksdb(AliasOrDir, Goal_1) :-
 
 
 call_rocksdb(AliasOrDir, Goal_1, Options0) :-
-	meta_options(is_meta, Options0, Options),
+  meta_options(is_meta, Options0, Options),
   setup_call_cleanup(
     rocksdb_open(AliasOrDir, Db, Options),
     call(Goal_1, Db),
@@ -88,23 +88,23 @@ call_rocksdb(AliasOrDir, Goal_1, Options0) :-
 
 %! rocksdb_batch(+AliasOrDb:or([atom,blob]), +Actions:list(compound)) is det.
 %
-%	Perform a batch of operations on RocksDB as an atomic operation.
-%	Actions is a list of compound terms of the following forms:
+% Perform a batch of operations on RocksDB as an atomic operation.
+% Actions is a list of compound terms of the following forms:
 %
-%	  - delete(+Key:term)
+%   - delete(+Key:term)
 %
 %     See rocksdb_delete/2.
 %
-%	  - put(+Key:term,+Value:term)
+%   - put(+Key:term,+Value:term)
 %
 %     See rocksdb_put/3.
 %
-%	Example usage:
+% Example usage:
 %
 % ```prolog
-%	rocksdb_get(Db, some_key, Value),
-%	rocksdb_batch(Db, [delete(some_key),put(other_key, Value)]),
-%	```
+% rocksdb_get(Db, some_key, Value),
+% rocksdb_batch(Db, [delete(some_key),put(other_key, Value)]),
+% ```
 
 
 
@@ -126,14 +126,14 @@ rocksdb_clear(_).
 
 %! rocksdb_close(+AliasOrDb:or([atom,blob])) is det.
 %
-%	Destroy the RocksDB handle.  Note that anonymous handles are subject
-%	to (atom) garbage collection.
+% Destroy the RocksDB handle.  Note that anonymous handles are subject
+% to (atom) garbage collection.
 
 
 
 %! rocksdb_delete(+AliasOrDb:or([atom,blob]), +Key:term) is semidet.
 %
-%	Delete Key from RocksDB.  Fails if Key is not in the database.
+% Delete Key from RocksDB.  Fails if Key is not in the database.
 
 
 
@@ -162,15 +162,15 @@ rocksdb_key_value(AliasOrDb, Key, Value) :-
 
 %! rocksdb_merge(+AliasOrDb:or([atom,blob]), +Key:term, +Value:term) is det.
 %
-%	Merge Value with the already existing value for Key.  Requires the
-%	option merge(:Merger) to be used when opening the database.  Using
-%	rocksdb_merge/3 rather than rocksdb_get/2, update and rocksdb_put/3
-%	makes the operation _atomic_ and reduces disk accesses.
+% Merge Value with the already existing value for Key.  Requires the
+% option merge(:Merger) to be used when opening the database.  Using
+% rocksdb_merge/3 rather than rocksdb_get/2, update and rocksdb_put/3
+% makes the operation _atomic_ and reduces disk accesses.
 %
-%	`Merger' is called as follows:
+% `Merger' is called as follows:
 %
 % ```prolog
-%	call(:Merger, +How, +Key, +Value0, +MergeValue, -Value)
+% call(:Merger, +How, +Key, +Value0, +MergeValue, -Value)
 % ```
 %
 % Two clauses are required, one for each possible value of `How':
@@ -183,119 +183,119 @@ rocksdb_key_value(AliasOrDb, Key, Value) :-
 %
 %     `MergeValue' is a single value.
 %
-%	If Key is not in RocksDB, `Value0` is unified with a value that
-%	depends on the value type.  If the value type is an atom, it is
-%	unified with the empty atom; if it is `string` or `binary` it is
-%	unified with an empty string; if it is `int32` or `int64` it is
-%	unified with the integer 0; and finally if the type is `term` it is
-%	unified with the empty list.
+% If Key is not in RocksDB, `Value0` is unified with a value that
+% depends on the value type.  If the value type is an atom, it is
+% unified with the empty atom; if it is `string` or `binary` it is
+% unified with an empty string; if it is `int32` or `int64` it is
+% unified with the integer 0; and finally if the type is `term` it is
+% unified with the empty list.
 %
-%	For example, if the value is a set of Prolog values we open the
-%	database with value(term) to allow for Prolog lists as value and we
-%	define merge_set/5 as below.
+% For example, if the value is a set of Prolog values we open the
+% database with value(term) to allow for Prolog lists as value and we
+% define merge_set/5 as below.
 %
-%	```
-%	merge(partial, _Key, Left, Right, Value) :-
-%	  ord_union(Left, Right, Value).
-%	merge(full, _Key, Initial, Additions, Value) :-
-%	  append([Initial|Additions], List),
-%	  sort(List, Value).
-%	```
+% ```
+% merge(partial, _Key, Left, Right, Value) :-
+%   ord_union(Left, Right, Value).
+% merge(full, _Key, Initial, Additions, Value) :-
+%   append([Initial|Additions], List),
+%   sort(List, Value).
+% ```
 %
-%	If the merge callback fails or raises an exception the merge
-%	operation fails and the error is logged through the RocksDB logging
-%	facilities.  Note that the merge callback can be called in a
-%	different thread or even in a temporary created thread if RocksDB
-%	decides to merge remaining values in the background.
+% If the merge callback fails or raises an exception the merge
+% operation fails and the error is logged through the RocksDB logging
+% facilities.  Note that the merge callback can be called in a
+% different thread or even in a temporary created thread if RocksDB
+% decides to merge remaining values in the background.
 %
-%	@error permission_error(merge, rocksdb RocksDB) if the database was
-%	not opened with the merge(Merger) option.
+% @error permission_error(merge, rocksdb RocksDB) if the database was
+% not opened with the merge(Merger) option.
 %
-%	@see https://github.com/facebook/rocksdb/wiki/Merge-Operator for
-%	understanding the concept of value merging in RocksDB.
+% @see https://github.com/facebook/rocksdb/wiki/Merge-Operator for
+% understanding the concept of value merging in RocksDB.
 
 
 
 %! rocksdb_open(+Directory:atom, -AliasOrDb:or([atom,blob]), +Options:list(compound)) is det.
 %
-%	Open a RocksDB database in Directory and unify RocksDB with a handle
-%	to the opened database.  Defined options are:
+% Open a RocksDB database in Directory and unify RocksDB with a handle
+% to the opened database.  Defined options are:
 %
-%	  - alias(+Name)
+%   - alias(+Name)
 %
-%	    Give the database a name instead of using an anonymous handle.
-%	    A named database is not subject to GC and must be closed
-%	    explicitly.
+%     Give the database a name instead of using an anonymous handle.
+%     A named database is not subject to GC and must be closed
+%     explicitly.
 %
-%	  - open(+How)
+%   - open(+How)
 %
-%	    If How is `once' and an alias is given, a second open simply
-%	    returns a handle to the already open database.
+%     If How is `once' and an alias is given, a second open simply
+%     returns a handle to the already open database.
 %
-%	  - key(+Type)
+%   - key(+Type)
 %
-%	  - value(+Type)
+%   - value(+Type)
 %
-%	    Define the type for the key and value. This must be consistent
-%	    over multiple invocations.  Defined types are:
+%     Define the type for the key and value. This must be consistent
+%     over multiple invocations.  Defined types are:
 %
-%	    - atom
+%     - atom
 %
-%	      Accepts an atom or string.  Unifies the result with an atom.
-%	      Data is stored as a UTF-8 string in RocksDB.
+%       Accepts an atom or string.  Unifies the result with an atom.
+%       Data is stored as a UTF-8 string in RocksDB.
 %
-%	    - string
+%     - string
 %
-%	      Accepts an atom or string.  Unifies the result with a string.
-%	      Data is stored as a UTF-8 string in RocksDB.
+%       Accepts an atom or string.  Unifies the result with a string.
+%       Data is stored as a UTF-8 string in RocksDB.
 %
-%	    - binary
+%     - binary
 %
-%	      Accepts an atom or string with codes in the range 0…255.
-%	      Unifies the result with a string. Data is stored as a sequence
-%	      of bytes in RocksDB.
+%       Accepts an atom or string with codes in the range 0…255.
+%       Unifies the result with a string. Data is stored as a sequence
+%       of bytes in RocksDB.
 %
-%	    - int32
+%     - int32
 %
-%	      Maps to a Prolog integer in the range
-%	      -2,147,483,648…2,147,483,647, stored as a 4 bytes in native
-%	      byte order.
+%       Maps to a Prolog integer in the range
+%       -2,147,483,648…2,147,483,647, stored as a 4 bytes in native
+%       byte order.
 %
-%	    - int64
+%     - int64
 %
-%	      Maps to a Prolog integer in the range
-%	      -9,223,372,036,854,775,808…9,223,372,036,854,775,807, stored
-%	      as a 8 bytes in native byte order.
+%       Maps to a Prolog integer in the range
+%       -9,223,372,036,854,775,808…9,223,372,036,854,775,807, stored
+%       as a 8 bytes in native byte order.
 %
-%	    - float
+%     - float
 %
-%	      Value is mapped to a 32-bit floating point number.
+%       Value is mapped to a 32-bit floating point number.
 %
-%	    - double
+%     - double
 %
-%	      Value is mapped to a 34-bit floating point number (double).
+%       Value is mapped to a 34-bit floating point number (double).
 %
-%	    - term
+%     - term
 %
-%	      Stores any Prolog term.  Stored using PL_record_external().
-%	      The PL_record_external() function serializes the internal
-%	      structure of a term, including _cycles_, _sharing_ and
-%	      _attributes_.  This means that if the key is a term, it only
-%	      matches if the the same cycles and sharing is used.  For
-%	      example, `X = f(a), Key = k(X,X)` is a different key from `Key
-%	      = k(f(a),f(a))` and `X = [a|X]` is a different key from `X =
-%	      [a,a|X]`.  Applications for which such keys should match must
-%	      first normalize the key.  Normalization can be based on
-%	      term_factorized/3 from library(terms).
+%       Stores any Prolog term.  Stored using PL_record_external().
+%       The PL_record_external() function serializes the internal
+%       structure of a term, including _cycles_, _sharing_ and
+%       _attributes_.  This means that if the key is a term, it only
+%       matches if the the same cycles and sharing is used.  For
+%       example, `X = f(a), Key = k(X,X)` is a different key from `Key
+%       = k(f(a),f(a))` and `X = [a|X]` is a different key from `X =
+%       [a,a|X]`.  Applications for which such keys should match must
+%       first normalize the key.  Normalization can be based on
+%       term_factorized/3 from library(terms).
 %
-%	  - merge(:Goal)
+%   - merge(:Goal)
 %
-%	    Define RocksDB value merging.  See rocksdb_merge/3.
+%     Define RocksDB value merging.  See rocksdb_merge/3.
 %
-%	  - mode(+Mode)
+%   - mode(+Mode)
 %
-%	    One of `read_write` (default) or `read_only`.  The latter uses
-%	    OpenForReadOnly() to open the database.
+%     One of `read_write` (default) or `read_only`.  The latter uses
+%     OpenForReadOnly() to open the database.
 %
 % If Directory does not yet exist it is created.
 %
@@ -307,7 +307,7 @@ rocksdb_open(Dir, Db) :-
 
 
 rocksdb_open(Dir, Db, Options0) :-
-	meta_options(is_meta, Options0, Options1),
+  meta_options(is_meta, Options0, Options1),
   create_directory(Dir),
   set_alias_option_(Dir, Options1, Alias, Options2),
   store_alias_directory_(Alias, Dir),
@@ -315,9 +315,10 @@ rocksdb_open(Dir, Db, Options0) :-
 
 store_alias_directory_(Alias, Dir) :-
   rocksdb_alias_directory_(Alias, Dir), !.
+% Alias already exists: throw exception.
 store_alias_directory_(Alias, _) :-
-  rocksdb_alias_directory_(Alias, _), !,
-  existence_error(rocksdb_alias, Alias).
+  rocksdb_alias_directory_(Alias, _),
+  throw(error(already_exists(rocksbd_alias,Alias),rocksdb_open/3)).
 store_alias_directory_(Alias, Dir) :-
   assertz(rocksdb_alias_directory_(Alias,Dir)).
 
@@ -347,7 +348,7 @@ rocksdb_property(AliasOrDb, Property) :-
   compound_name_arguments(Property, Key, [Value]), !,
   rocksdb_property(AliasOrDb, Key, Value).
 rocksdb_property(_AliasOrDb, Property) :-
-  type_error(property, Property).
+  type_error(rocksdb_property, Property).
 
 rocksdb_property_(estimate_num_keys).
 
@@ -355,8 +356,8 @@ rocksdb_property_(estimate_num_keys).
 
 %! rocksdb_put(+AliasOrDb:or([atom,blob]), +Key:term, +Value:term) is det.
 %
-%	Add Key-Value to the RocksDB  database.   If  Key  already has a
-%	value, the existing value is silently replaced by Value.
+% Add Key-Value to the RocksDB  database.   If  Key  already has a
+% value, the existing value is silently replaced by Value.
 
 
 
