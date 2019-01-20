@@ -320,9 +320,10 @@ rocksdb_create_directory_(Dir, _) :-
 
 store_alias_directory_(Alias, Dir) :-
   rocksdb_alias_directory_(Alias, Dir), !.
+% Alias already exists: throw exception.
 store_alias_directory_(Alias, _) :-
-  rocksdb_alias_directory_(Alias, _), !,
-  existence_error(rocksdb_alias, Alias).
+  rocksdb_alias_directory_(Alias, _),
+  throw(error(already_exists(rocksbd_alias,Alias),rocksdb_open/3)).
 store_alias_directory_(Alias, Dir) :-
   assertz(rocksdb_alias_directory_(Alias,Dir)).
 
@@ -352,7 +353,7 @@ rocksdb_property(AliasOrDb, Property) :-
   compound_name_arguments(Property, Key, [Value]), !,
   rocksdb_property(AliasOrDb, Key, Value).
 rocksdb_property(_AliasOrDb, Property) :-
-  type_error(property, Property).
+  type_error(rocksdb_property, Property).
 
 rocksdb_property_(estimate_num_keys).
 
